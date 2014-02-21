@@ -1,0 +1,8 @@
+Backbone Patterns
+=================
+
+A short talk I gave recently on Backbone patterns. Mainly covering small
+things you can do to make your Backbone (or any application) easier to
+maintain and test.
+
+Available at: http://aron.github.io/backbone-patterns-talk/

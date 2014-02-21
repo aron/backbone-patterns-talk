@@ -1,0 +1,564 @@
+<!doctype html>
+<html lang="en">
+
+  <head>
+    <meta charset="utf-8">
+
+    <title>reveal.js - The HTML Presentation Framework</title>
+
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+    <link rel="stylesheet" href="css/reveal.css">
+    <link rel="stylesheet" href="css/theme/night.css" id="theme">
+    <link rel="stylesheet" href="lib/css/zenburn.css">
+
+    <!-- If the query includes 'print-pdf', use the PDF print sheet -->
+    <script>
+      document.write( '<link rel="stylesheet" href="css/print/' + ( window.location.search.match( /print-pdf/gi ) ? 'pdf' : 'paper' ) + '.css" type="text/css" media="print">' );
+    </script>
+
+    <!--[if lt IE 9]>
+    <script src="lib/js/html5shiv.js"></script>
+    <![endif]-->
+
+    <style>
+      .reveal h2 { line-height: 1.3 }
+      .reveal p { font-size: 120%; line-height: 1.5 }
+      .reveal li { font-size: 120%; line-height: 1.5; margin-bottom: 0.5em }
+      .reveal pre { font-size: 0.8em; line-height: 1.3; box-shadow: none; }
+    </style>
+  </head>
+  <body>
+    <div class="reveal">
+      <!-- Any section element inside of this container is displayed as a slide -->
+      <div class="slides">
+        <section>
+          <h1>Backbone</h1>
+        </section>
+
+        <section>
+          <h3>Some ramblings…</h3>
+        </section>
+
+        <section>
+          <ol>
+            <li>Use of success, error handlers</li>
+            <li>Only using Backbone components</li>
+            <li style="white-space: nowrap">Putting too much responsibility on the view</li>
+            <li>Passing models too far down the stack</li>
+            <li>Coupling persistence to the model</li>
+          </ol>
+        </section>
+
+        <section>
+          <h2>1. Use of success and<br/>error options</h2>
+        </section>
+        <section>
+          <p>Backbone.Model has returned promise objects<br />for a while now, lets use them.</p>
+        </section>
+        <section>
+          <pre><code class="javascript">
+// Old style options.
+model.fetch({
+  success: function (data) {
+    // Handle success.
+  },
+  error: function () {
+    // Handle error.
+  }
+});
+
+          </code></pre>
+        </section>
+        <section>
+          <pre><code class="javascript">
+// With promises.
+model.fetch().then(function (data) {
+  // Handle success.
+}, function () {
+  // Handle error.
+});
+          </code></pre>
+        </section>
+        <section>
+          <pre><code class="javascript">
+// Wrapping errors (Antipattern)
+fetch: function (options) {
+  var oldSuccess = options &amp;&amp; options.success;
+  options.success = function () {
+    oldSuccess &amp;&amp; oldSuccess();
+  }
+  return Parent.prototype.fetch.call(this, options);
+}
+          </code></pre>
+        </section>
+        <section>
+          <pre><code class="javascript">
+// Hooking into errors (Suggested pattern)
+fetch: function () {
+  var request = Parent.prototype.fetch.apply(this, arguments);
+  request.then(onSuccess, onError);
+  return request;
+}
+          </code></pre>
+        </section>
+        <section>
+          <pre><code class="javascript">
+// We can even seperate the request actions from unrelated code.
+fetch: function () {
+  return this.model.fetch();
+},
+refresh: function () {
+  this.showSpinner();
+  this.reload().then(hideSpinner).then(render);
+}
+          </code></pre>
+        </section>
+
+        <section>
+          <h2>2. Only using Backbone<br/>components</h2>
+        </section>
+        <section>
+          <p>Not everything has to be an extension<br/>of a Backbone object.</p>
+        </section>
+        <section>
+          <pre><code class="javascript">
+// Here's a controller.
+// It handles creating a view or two and fetching some models.
+// Maybe it persists them, or just triggers events for other
+// parts of the app to take care of.
+function MentionController() {
+  this.model = new Mention();
+  this.view = new MentionView({model: this.model});
+
+  this.view.on("click:create-button", function () {
+    // Handles loading a modal and saving a mention.
+    new CreateMentionController();
+  });
+}
+          </code></pre>
+        </section>
+
+        <section>
+          <h2>3. Putting too much responsibility on the view</h2>
+        </section>
+        <section>
+            <h2>What is a view?</h2>
+            <p>What is it’s responsibility within <br/>the codebase?</p>
+        </section>
+        <section>
+          <p>We use a view to render a dom element and<br/>listen for interactions.</p>
+          <p>The view then reports these interactions back to a controller/parent view</p>
+          <!-- <p>We then throw the results of those interactions up a level to a controller/parent view</p> -->
+        </section>
+        <section>
+          <p>In an ideal world the view should have no knowledge of the application
+          outside of it's root element and any child views.</p>
+        </section>
+        <section>
+          <h2>Example 1</h2>
+          <p>The update button has been clicked;<br />how do we update the model?</p>
+        </section>
+        <section>
+          <pre><code class="javascript">
+// WidgetForm.js (Antipattern)
+onSubmit: function (event) {
+  this.model.save(formData(), {
+    success: function () {
+      // Show the widget.
+    },
+    error: function () {
+      // Show an error notification.
+    }
+  });
+}          </code></pre>
+        </section>
+        <section>
+          <pre><code class="javascript">
+// WidgetForm.js (Suggested Pattern)
+function triggerSubmit(view, data) {
+  view.trigger('event', data);
+}
+
+onSubmit: function (event) {
+  triggerSubmit(data, getFormData(event.target));
+},
+render: function () {
+  this.el.innerHTML = renderTemplate(this.model.attributes);
+  return this.el;
+}
+          </code></pre>
+        </section>
+        <section>
+          <pre><code class="javascript">
+// WidgetControllerForm.js (Usage)
+var widget = new Widget();
+var widgetForm = new WidgetForm({model: widget});
+someContainer.appendChild(widgetForm.render());
+
+widgetForm.on('submit', function (data) {
+  widget.save(data).then(showWidget, function (xhr) {
+    var errors = $.parseJSON(xhr.responseText).errors);
+    // show a notification.
+  });
+});
+          </code></pre>
+        </section>
+        <section>
+          <pre><code class="javascript">
+// Test.js
+var widget = new Widget();
+var widgetForm = new WidgetForm({model: widget});
+var spy = sinon.spy();
+
+widgetForm.on('submit', spy);
+widgetForm.render();
+
+widgetForm.$('input').val('test')
+widgetForm.$('button').click()
+expect(spy.calledWith({value: 'test'})).toBe(true);
+          </code></pre>
+        </section>
+
+        <section>
+          <h2>Example 2</h2>
+          <p>An error has occured, how do we notify the user?</p>
+        </section>
+        <section>
+          <pre><code class="javascript">
+// AutoCompleteView.js (Antipattern)
+onKeypress: function (event) {
+  event.preventDefault();
+  suggestGlobal.get(event.target.value, {
+    success: updateView,
+    error: function (err) {
+      jQuery.notify('<p>Unable to fetch suggestions</p>');
+    }
+  });
+}
+          </code></pre>
+        </section>
+        <section>
+          <pre><code class="javascript">
+// AutoCompleteView.js (Suggested Pattern)
+suggest: function (partial) {
+  suggestGlobal.get(event.target.value, {
+    success: updateView,
+    error: function (err) {
+      NotificationHub.trigger('error', 'Unable to fetch suggestions', err);
+    }
+  });
+},
+onKeypress: function (event) {
+  suggest(event.target.value);
+}
+          </code></pre>
+        </section>
+        <section>
+          <pre><code class="javascript">
+// NotificationController.js (Usage)
+var $notification = jQuery('.page-notifications');
+NotificationHub.on('error', function (message, error) {
+  jQuery.notify(message, {type: 'error'});
+});
+          </code></pre>
+        </section>
+        <section>
+          <pre><code class="javascript">
+// Test.js
+setupSuggestGlobal(); // Cause the fetch to error.
+
+var stub = sinon.stub(NotificationHub, 'trigger');
+var view = new AutoCompleteView();
+view.$('input').val('part').keypress();
+
+expect(stub.calledWith('error', 'Could not fetch suggestions')).toBe(true);
+          </code></pre>
+        </section>
+        <section>
+          <pre><code class="javascript">
+// Controller Test.js
+var spy = sinon.stub(jQuery, 'notify');
+NotificationHub.trigger('error', 'Could not fetch suggestions');
+expect(spy.calledWith('Could not fetch suggestions')).toBe(true);
+          </code></pre>
+        </section>
+        <section>
+          <h2>Example 3</h2>
+          <p>The new widget button has been clicked,<br/>let’s show a form!</p>
+        </section>
+        <section>
+          <pre><code class="javascript">
+// CreateWidgetButton.js (Antipattern)
+onNewClick: function (event) {
+  event.preventDefault();
+  WidgetModalForm.show(this.model);
+}
+          </code></pre>
+        </section>
+        <section>
+          <pre><code class="javascript">
+// CreateWidgetButton.js (Suggested Pattern)
+function triggerClickEvent(view) {
+  view.trigger('submit');
+}
+
+onNewClick: function (event) {
+  event.preventDefault();
+  triggerClickEvent(this);
+}
+          </code></pre>
+        </section>
+        <section>
+          <pre><code class="javascript">
+// WidgetController.js (Usage)
+var button = new CreateFormButton();
+document.body.appendChild(button);
+
+button.on('submit', function () {
+  var form = new CreateWidgetForm();
+  form.on('submit', createModel);
+
+  appModal.appendChild(form.el);
+  appModal.show();
+});
+          </code></pre>
+        </section>
+        <section>
+          <pre><code class="javascript">
+// Test.js
+var button = new CreateFormButton();
+var spy = sinon.spy();
+
+button.on('submit', spy);
+button.$('form').submit();
+
+expect(spy.wasCalled).toBe(true);
+          </code></pre>
+        </section>
+
+        <section>
+          <h2>4. Passing models too far<br/>down the stack</h2>
+        </section>
+        <section>
+          <h3>The best views don’t use models</h3>
+          <p>If you have a small component that doesn’t need to listen to
+          changes to a model, pass only the data that’s required to render it.</p>
+        </section>
+        <section>
+          <pre><code class="javascript">
+// Antipattern, this view is dependant on a model for one value.
+Backbone.View.extend({
+  events: {
+    'input[type=range] change': function (event) {
+      this.trigger('save', this.model);
+    }
+  },
+  render: function () {
+     var html = '<input type="range" value="' + this.model('value') + '" />';
+     this.$el.html(html);
+  }
+});
+          </code></pre>
+        </section>
+        <section>
+          <pre><code class="javascript">
+// This view now neeeds a Widget to work.
+// Tests need to create an instance of a Widget with fixture data.
+var widget = new Widget({name: 'foo', percentage: 10, ... });
+
+var view = new Slider({model: widget});
+model.render();
+model.$('input').change();
+expect(stub.calledWith({value: 10}).toBe(true);
+          </code></pre>
+        </section>
+        <section>
+          <pre><code class="javascript">
+Backbone.View.extend({
+  events: {
+    &apos;input[type=range] change&apos;: function (event) {
+      this.trigger(&apos;change&apos;, event.target.value);
+    }
+  },
+  constructor: function Slider(options) {
+    this.value = options.value || 0;
+  },
+  render: function () {
+     var html = &apos;&lt;input type=&quot;range&quot; value=&quot;&apos; + _.escape(this.value) + &apos;&quot; /&gt;&apos;
+     this.$el.html(html);
+  }
+});
+          </code></pre>
+        </section>
+        <section>
+          <pre><code class="javascript">
+// Move model handling responsibility into another object.
+var model = new Widget({percentage: 10});
+var sliderView = new SliderView({value: model.get(&apos;percentage&apos;)});
+sliderView.on(&apos;change&apos;, updateModel);
+          </code></pre>
+        </section>
+        <section>
+          <pre><code class="javascript">
+// View tests become cleaner with and have zero dependancies.
+var sliderView = new SliderView({value: 10});
+expect(sliderView.$(&apos;input&apos;).val()).toBe(10);
+
+// Interactions can be easily validated.
+sliderView.on(&apos;change&apos;, spy);
+sliderView.$(&apos;input&apos;).val(2).change();
+expect(spy.calledWith(2)).toBe(true);
+          </code></pre>
+        </section>
+
+        <section>
+          <h2>5. Coupling the persistence layer to the model</h2>
+        </section>
+        <section>
+          <p>Okay, this isn’t an anti-pattern, it’s a problem I have with
+          Backbone. It doesn’t make the framework bad, but it’s the biggest problem
+          I’ve seen people run into when it growing a codebase built on Backbone.</p>
+        </section>
+        <section>
+          <h2>What is a Model?</h2>
+          <p>What is it’s responsibility?</p>
+        </section>
+        <section>
+          <p>A model represents a piece of application state. It’s job is to
+          notify views/controllers when this state changes.</p>
+        </section>
+        <section>
+          <ul>
+            <li>Having this model also know about the persistance layer breaks the
+            single responsibility principal.</li>
+            <li>It also makes it very easy to tightly couple your API data structure
+            to your app making changes hard.</li>
+            <li>Finally, it makes it too easy to call <code>save</code> in the views.</li>
+          </ul>
+        </section>
+        <section>
+          <h2>So what can we do about this?</h2>
+          <p>How about an API client?</p>
+        </section>
+        <section>
+          <img src="./images/bad-diagram.png" style="border: none;" />
+        </section>
+        <section>
+          <ul>
+            <li>All the urls in one place, all the data parsing in one place.</li>
+            <li>Can be reused by different applications.</li>
+            <li>Provides a flexible layer between the application and your API</li>
+          </ul>
+        </section>
+        <section>
+          <pre><code class="javascript">
+var client = new APIClient(endpoint);
+client.getMention(id);       // Return a mention.
+client.getMe();              // Return a user.
+client.updateUser(id, data); // Update a user.
+          </code></pre>
+        </section>
+        <section>
+          <pre><code class="javascript">
+// The client can then be used by controllers
+// to persist model data.
+client.getMention(id).then(function (data) {
+  return new Mention(data);
+});
+          </code></pre>
+        </section>
+        <section>
+          <pre><code class="javascript">
+// The Backbone API can be maintained by passing in the store.
+// This is useful for allowing the model to be lazy loaded.
+new Mention(data, {client: client}).fetch().then(blah, bleh);
+          </code></pre>
+        </section>
+        <section>
+          <ul>
+            <li>It’s now the responsibility of the client to ensure the model
+            data within the app is correct.</li>
+            <li>The api should be able to change (within reason)</li>
+            <li>And client can manipulate the data to suit without touching models.</li>
+            <li>The model interface can focus on representing the data.</li>
+          </ul>
+        </section>
+        <section>
+          <p>This allows the application do determine own<br/>domain language.</p>
+          <p>(The closer this is to the API the better, but this gives
+          flexibility for the two to diverge without huge refactorings.)</p>
+        </section>
+        <section>
+          <h2>The point at which we diverge from the talk…</h2>
+        </section>
+        <section>
+          <pre><code class="javascript">
+// Need caching? Want local storage?
+// Lets wrap the client in a store/cache layer.
+var store = new Store(client);
+
+// No id just get an empty model.
+var mention = store.get(&apos;mention&apos;);
+
+// With an id get a model with a loading state.
+var mention = store.get(&apos;mention&apos;, id);
+
+          </code></pre>
+        </section>
+        <section>
+          <pre><code class="javascript">
+// maybeFetch works like fetch but will return
+// a local version of the data if available.
+mention.maybeFetch().then(function () {
+  mention.get('id') //=> 1
+});
+          </code></pre>
+        </section>
+        <section>
+          <pre><code class="javascript">
+// Views can be passed models that may/may not be loaded
+// they can handle both possibilities.
+new mentionView = new MentionView({model: mention});
+
+// MentionView
+render: function () {
+  if (model.isNew()) {
+    this.renderLoading;
+  } else {
+    model.maybeFetch().then(this.renderLoaded);
+  }
+}
+          </code></pre>
+        </section>
+      </div>
+    </div>
+
+    <script src="lib/js/head.min.js"></script>
+    <script src="js/reveal.js"></script>
+    <script>
+
+      // Full list of configuration options available here:
+      // https://github.com/hakimel/reveal.js#configuration
+      Reveal.initialize({
+        controls: true,
+        progress: true,
+        history: true,
+        center: true,
+        transition: 'none', // default/cube/page/concave/zoom/linear/fade/none
+        transitionSpeed: 'none', // default/fast/slow
+        backgroundTransition: 'none', // default/linear/none
+        minScale: 1,
+        controls: false,
+
+        // Optional libraries used to extend on reveal.js
+        dependencies: [
+          { src: 'lib/js/classList.js', condition: function() { return !document.body.classList; } },
+          { src: 'plugin/highlight/highlight.js', async: true, callback: function() { hljs.initHighlightingOnLoad(); } }
+        ]
+      });
+    </script>
+  </body>
+</html>
